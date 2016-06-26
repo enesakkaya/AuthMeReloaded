@@ -14,6 +14,8 @@ import java.net.URLConnection;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
 
+import org.bukkit.plugin.java.JavaPlugin;
+
 public class GeoLiteAPI {
     private static final String LICENSE =
         "[LICENSE] This product uses data from the GeoLite API created by MaxMind, available at http://www.maxmind.com";
@@ -30,14 +32,14 @@ public class GeoLiteAPI {
      *
      * @return True if the data is available, false otherwise.
      */
-    public synchronized static boolean isDataAvailable() {
+    public synchronized static boolean isDataAvailable(JavaPlugin plugin) {
         if (downloadTask != null && downloadTask.isAlive()) {
             return false;
         }
         if (lookupService != null) {
             return true;
         }
-        final File pluginFolder = AuthMe.getInstance().getDataFolder();
+        final File pluginFolder = plugin.getDataFolder();
         final File data = new File(pluginFolder, "GeoIP.dat");
         if (data.exists()) {
             boolean dataIsOld = (System.currentTimeMillis() - data.lastModified()) > TimeUnit.DAYS.toMillis(30);
@@ -94,8 +96,8 @@ public class GeoLiteAPI {
      *
      * @return two-character ISO 3166-1 alpha code for the country.
      */
-    public static String getCountryCode(String ip) {
-        if (!"127.0.0.1".equals(ip) && isDataAvailable()) {
+    public static String getCountryCode(JavaPlugin plugin, String ip) {
+        if (!"127.0.0.1".equals(ip) && isDataAvailable(plugin)) {
             return lookupService.getCountry(ip).getCode();
         }
         return "--";
@@ -108,8 +110,8 @@ public class GeoLiteAPI {
      *
      * @return The name of the country.
      */
-    public static String getCountryName(String ip) {
-        if (!"127.0.0.1".equals(ip) && isDataAvailable()) {
+    public static String getCountryName(JavaPlugin plugin, String ip) {
+        if (!"127.0.0.1".equals(ip) && isDataAvailable(plugin)) {
             return lookupService.getCountry(ip).getName();
         }
         return "N/A";

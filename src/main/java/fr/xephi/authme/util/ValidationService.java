@@ -105,6 +105,7 @@ public class ValidationService implements Reloadable {
             return true;
         }
 
+        // FIXME: we need the plugin instance
         String countryCode = GeoLiteAPI.getCountryCode(hostAddress);
         return validateWhitelistAndBlacklist(countryCode,
             ProtectionSettings.COUNTRIES_WHITELIST,

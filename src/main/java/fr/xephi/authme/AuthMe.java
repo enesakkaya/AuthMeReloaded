@@ -5,7 +5,6 @@ import fr.xephi.authme.api.API;
 import fr.xephi.authme.api.NewAPI;
 import fr.xephi.authme.cache.auth.PlayerAuth;
 import fr.xephi.authme.cache.auth.PlayerCache;
-import fr.xephi.authme.cache.backup.JsonCache;
 import fr.xephi.authme.cache.limbo.LimboCache;
 import fr.xephi.authme.cache.limbo.LimboPlayer;
 import fr.xephi.authme.command.CommandHandler;
@@ -58,6 +57,8 @@ import fr.xephi.authme.util.GeoLiteAPI;
 import fr.xephi.authme.util.MigrationService;
 import fr.xephi.authme.util.StringUtils;
 import fr.xephi.authme.util.Utils;
+import lombok.Getter;
+
 import org.apache.logging.log4j.LogManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -91,21 +92,32 @@ import static fr.xephi.authme.settings.properties.EmailSettings.RECALL_PLAYERS;
  */
 public class AuthMe extends JavaPlugin {
 
-    // Name of the plugin.
-    private static final String PLUGIN_NAME = "AuthMeReloaded";
+    /*
+     * Costants
+     */
 
-    // Default version and build number values;
+    public static final String PLUGIN_NAME = "AuthMeReloaded";
+    public static final String LOG_FILENAME = "authme.log";
+    public static final int SQLITE_MAX_SIZE = 4000;
+
+    /*
+     * Plugin info
+     */
+
+    @Getter
+    private static String pluginName = PLUGIN_NAME;
+    @Getter
     private static String pluginVersion = "N/D";
+    @Getter
     private static String pluginBuildNumber = "Unknown";
 
     /*
      * Private instances
      */
 
-    // Plugin instance
-    private static AuthMe plugin;
-
+    private static AuthMe instance;
     private NewAPI api;
+
     private Management management;
     private CommandHandler commandHandler;
     private PermissionsManager permsMan;
@@ -121,7 +133,7 @@ public class AuthMe extends JavaPlugin {
     /*
      * Public instances
      */
-    
+
     // TODO: Encapsulate session management
     public final ConcurrentHashMap<String, BukkitTask> sessions = new ConcurrentHashMap<>();
     // TODO #655: Encapsulate mail
@@ -139,62 +151,13 @@ public class AuthMe extends JavaPlugin {
 
     /*
      * Constructor for unit testing.
+     * The super constructor is deprecated to mark it for unit testing only.
      */
     @VisibleForTesting
-    @SuppressWarnings("deprecation") // the super constructor is deprecated to mark it for unit testing only
+    @SuppressWarnings("deprecation")
     protected AuthMe(final PluginLoader loader, final Server server, final PluginDescriptionFile description,
                      final File dataFolder, final File file) {
         super(loader, server, description, dataFolder, file);
-    }
-
-    /**
-     * Get the plugin's instance.
-     *
-     * @return AuthMe
-     */
-    @Deprecated
-    public static AuthMe getInstance() {
-        return plugin;
-    }
-
-    /**
-     * Get the plugin's name.
-     *
-     * @return The plugin's name.
-     */
-    public static String getPluginName() {
-        return PLUGIN_NAME;
-    }
-
-    /**
-     * Get the plugin's version.
-     *
-     * @return The plugin's version.
-     */
-    public static String getPluginVersion() {
-        return pluginVersion;
-    }
-
-    /**
-     * Get the plugin's build number.
-     *
-     * @return The plugin's build number.
-     */
-    public static String getPluginBuildNumber() {
-        return pluginBuildNumber;
-    }
-
-    // Get version and build number of the plugin
-    private void loadPluginInfo() {
-        String versionRaw = this.getDescription().getVersion();
-        int index = versionRaw.lastIndexOf("-");
-        if (index != -1) {
-            pluginVersion = versionRaw.substring(0, index);
-            pluginBuildNumber = versionRaw.substring(index + 1);
-            if (pluginBuildNumber.startsWith("b")) {
-                pluginBuildNumber = pluginBuildNumber.substring(1);
-            }
-        }
     }
 
     /**
@@ -202,44 +165,68 @@ public class AuthMe extends JavaPlugin {
      */
     @Override
     public void onEnable() {
-        // Set the plugin instance and load plugin info from the plugin description.
-        plugin = this;
-        loadPluginInfo();
 
-        // Set the Logger instance and log file path
-        ConsoleLogger.setLogger(getLogger());
-        ConsoleLogger.setLogFile(new File(getDataFolder(), "authme.log"));
+        /*
+         * Main instances
+         */
 
-        // Load settings and custom configurations, if it fails, stop the server due to security reasons.
+        // Set the plugin instance and obtain the version info
+        instance = this;
+        loadVersionInfo();
+
+        // Obtain the raw logger instance
+        Logger rawLogger = instance.getLogger();
+
+        /*
+         * Settings setup
+         */
+
+        // Load settings and custom configurations, if it fails, stop the server due to security reasons
         newSettings = createNewSetting();
         if (newSettings == null) {
-            getLogger().warning("Could not load configuration. Aborting.");
-            getServer().shutdown();
-            setEnabled(false);
+            rawLogger.severe("Could not load configuration! THE SEREVR IS GOING TO SHUTDOWN DUE TO SECURITY REASONS.");
+            Bukkit.shutdown();
             return;
         }
 
-        // Apply settings to the logger
+        // Setup the deprecated setting manager
+        // TODO: remove this when the old settings class is deleted
+        if (!loadDeprecatedSettings()) {
+            rawLogger.severe("Could not load configuration! THE SEREVR IS GOING TO SHUTDOWN DUE TO SECURITY REASONS.");
+            getServer().shutdown();
+            return;
+        }
+
+        /*
+         * ConsoleLogger and Console filter setup
+         */
+
+        ConsoleLogger.setLogger(rawLogger);
         ConsoleLogger.setLoggingOptions(newSettings);
+        ConsoleLogger.setLogFile(new File(getDataFolder(), LOG_FILENAME));
 
-        // Old settings manager
-        if (!loadSettings()) {
-            getServer().shutdown();
-            setEnabled(false);
-            return;
-        }
+        // Set console filter
+        setupConsoleFilter();
+
+        /*
+         * Database setup
+         */
 
         // Connect to the database and setup tables
         try {
-            setupDatabase(newSettings);
+            setupDatabase();
         } catch (Exception e) {
-            ConsoleLogger.logException("Fatal error occurred during database connection! "
-                + "Authme initialization aborted!", e);
+            ConsoleLogger.logException("Fatal error occurred during database connection! Authme initialization aborted!", e);
             stopOrUnload();
             return;
         }
+
         // Convert deprecated PLAINTEXT hash entries
         MigrationService.changePlainTextToSha256(newSettings, database, new SHA256());
+
+        /*
+         * Services initialization
+         */
 
         // Injector initialization
         initializer = new AuthMeServiceInitializer("fr.xephi.authme");
@@ -260,11 +247,9 @@ public class AuthMe extends JavaPlugin {
         // Set up Metrics
         MetricsStarter.setupMetrics(this, newSettings);
 
-        // Set console filter
-        setupConsoleFilter();
 
         // Download and load GeoIp.dat file if absent
-        GeoLiteAPI.isDataAvailable();
+        GeoLiteAPI.isDataAvailable(instance);
 
         // Set up the mail API
         setupMailApi();
@@ -305,6 +290,21 @@ public class AuthMe extends JavaPlugin {
         // Purge on start if enabled
         PurgeService purgeService = initializer.get(PurgeService.class);
         purgeService.runAutoPurge();
+    }
+
+    /*
+     * Get version and build number of the plugin.
+     */
+    private void loadVersionInfo() {
+        String versionRaw = instance.getDescription().getVersion();
+        int index = versionRaw.lastIndexOf("-");
+        if (index != -1) {
+            pluginVersion = versionRaw.substring(0, index);
+            pluginBuildNumber = versionRaw.substring(index + 1);
+            if (pluginBuildNumber.startsWith("b")) {
+                pluginBuildNumber = pluginBuildNumber.substring(1);
+            }
+        }
     }
 
     protected void instantiateServices(AuthMeServiceInitializer initializer) {
@@ -401,17 +401,32 @@ public class AuthMe extends JavaPlugin {
     private void setupBungeeCordHook() {
         if (newSettings.getProperty(HooksSettings.BUNGEECORD)) {
             Messenger messenger = Bukkit.getMessenger();
-            messenger.registerOutgoingPluginChannel(plugin, "BungeeCord");
-            messenger.registerIncomingPluginChannel(plugin, "BungeeCord", initializer.get(BungeeCordMessage.class));
+            messenger.registerOutgoingPluginChannel(instance, "BungeeCord");
+            messenger.registerIncomingPluginChannel(instance, "BungeeCord", initializer.get(BungeeCordMessage.class));
         }
     }
 
     /**
      * Load the plugin's settings.
      *
-     * @return True on success, false on failure.
+     * @return the setting instance
      */
-    private boolean loadSettings() {
+    private NewSetting createNewSetting() {
+        File configFile = new File(getDataFolder(), "config.yml");
+        PropertyMap properties = SettingsFieldRetriever.getAllPropertyFields();
+        SettingsMigrationService migrationService = new SettingsMigrationService();
+        return FileUtils.copyFileFromResource(configFile, "config.yml")
+            ? new NewSetting(configFile, getDataFolder(), properties, migrationService)
+            : null;
+    }
+
+    /**
+     * Load the deprecated plugin's settings.
+     *
+     * @return true on success, false on failure
+     */
+    @Deprecated
+    private boolean loadDeprecatedSettings() {
         try {
             new Settings(this);
             return true;
@@ -421,15 +436,6 @@ public class AuthMe extends JavaPlugin {
             getServer().shutdown();
         }
         return false;
-    }
-
-    private NewSetting createNewSetting() {
-        File configFile = new File(getDataFolder(), "config.yml");
-        PropertyMap properties = SettingsFieldRetriever.getAllPropertyFields();
-        SettingsMigrationService migrationService = new SettingsMigrationService();
-        return FileUtils.copyFileFromResource(configFile, "config.yml")
-            ? new NewSetting(configFile, getDataFolder(), properties, migrationService)
-            : null;
     }
 
     /**
@@ -516,7 +522,8 @@ public class AuthMe extends JavaPlugin {
             ConsoleLogger.showError("THE SERVER IS GOING TO SHUT DOWN AS DEFINED IN THE CONFIGURATION!");
             getServer().shutdown();
         } else {
-            getServer().getPluginManager().disablePlugin(this);
+            ConsoleLogger.showError("AUTHME WAS UNABLE TO START CORRECTLY, THE AUTHENTICATION SYSTEM IS NOW DISABLED!");
+            instance.setEnabled(false);
         }
     }
 
@@ -529,41 +536,45 @@ public class AuthMe extends JavaPlugin {
      * @throws SQLException           when initialization of a SQL datasource failed
      * @see AuthMe#database
      */
-    public void setupDatabase(NewSetting settings) throws ClassNotFoundException, SQLException {
-        if (this.database != null) {
-            this.database.close();
+    // TODO: database manager
+    public void setupDatabase() throws ClassNotFoundException, SQLException {
+
+        if (database != null) {
+            database.close();
+            database = null;
         }
 
-        DataSourceType dataSourceType = settings.getProperty(DatabaseSettings.BACKEND);
-        DataSource dataSource;
-        switch (dataSourceType) {
+        DataSource newDatabase;
+
+        DataSourceType currentType = newSettings.getProperty(DatabaseSettings.BACKEND);
+        switch (currentType) {
             case FILE:
-                dataSource = new FlatFile();
+                // TODO: costant for file name?
+                File source = new File(instance.getDataFolder(), "auths.db");
+                newDatabase = MigrationService.convertFlatfileToSqlite(newSettings, new FlatFile(source));
                 break;
             case MYSQL:
-                dataSource = new MySQL(settings);
+                newDatabase = new MySQL(newSettings);
                 break;
             case SQLITE:
-                dataSource = new SQLite(settings);
+                newDatabase = new SQLite(newSettings);
                 break;
             default:
-                throw new UnsupportedOperationException("Unknown data source type '" + dataSourceType + "'");
+                throw new UnsupportedOperationException("Unknown data source type '" + currentType + "'");
         }
-
-        DataSource convertedSource = MigrationService.convertFlatfileToSqlite(newSettings, dataSource);
-        dataSource = convertedSource == null ? dataSource : convertedSource;
 
         if (newSettings.getProperty(DatabaseSettings.USE_CACHING)) {
-            dataSource = new CacheDataSource(dataSource);
+            newDatabase = new CacheDataSource(newDatabase);
         }
 
-        database = dataSource;
-        if (DataSourceType.SQLITE == dataSourceType) {
+        database = newDatabase;
+
+        if (database.getType() == DataSourceType.SQLITE) {
             getServer().getScheduler().runTaskAsynchronously(this, new Runnable() {
                 @Override
                 public void run() {
-                    int accounts = database.getAccountsRegistered();
-                    if (accounts >= 4000) {
+                    int accounts = instance.database.getAccountsRegistered();
+                    if (accounts >= SQLITE_MAX_SIZE) {
                         ConsoleLogger.showError("YOU'RE USING THE SQLITE DATABASE WITH "
                             + accounts + "+ ACCOUNTS; FOR BETTER PERFORMANCE, PLEASE UPGRADE TO MYSQL!!");
                     }
@@ -685,6 +696,7 @@ public class AuthMe extends JavaPlugin {
             .replace("{WORLD}", player.getWorld().getName())
             .replace("{SERVER}", server.getServerName())
             .replace("{VERSION}", server.getBukkitVersion())
+            // FIXME: We should cache info like this, maybe with a class that extends Player?
             .replace("{COUNTRY}", GeoLiteAPI.getCountryName(ipAddress));
     }
 

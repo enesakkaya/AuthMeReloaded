@@ -41,14 +41,12 @@ public class FlatFile implements DataSource {
      */
     private final File source;
 
-    public FlatFile() {
-        AuthMe instance = AuthMe.getInstance();
-
-        source = new File(instance.getDataFolder(), "auths.db");
+    public FlatFile(File source) {
         try {
             source.createNewFile();
         } catch (IOException e) {
             ConsoleLogger.logException("Cannot open flatfile", e);
+            // FIXME: throw error maybe?
             if (Settings.isStopEnabled) {
                 ConsoleLogger.showError("Can't use FLAT FILE... SHUTDOWN...");
                 instance.getServer().shutdown();
@@ -57,11 +55,6 @@ public class FlatFile implements DataSource {
                 instance.getServer().getPluginManager().disablePlugin(instance);
             }
         }
-    }
-
-    @VisibleForTesting
-    public FlatFile(File source) {
-        this.source = source;
     }
 
     @Override
