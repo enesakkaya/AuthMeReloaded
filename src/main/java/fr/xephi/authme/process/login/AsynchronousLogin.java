@@ -110,6 +110,14 @@ public class AsynchronousLogin implements AsynchronousProcess {
             }
         }
 
+        bukkitService.runTaskAsynchronously(new Runnable() {
+            @Override
+            public void run() {
+                AuthMeAsyncPreLoginEvent event = new AuthMeAsyncPreLoginEvent(player);
+                bukkitService.callEvent(event);
+            }
+        });
+
         AuthMeAsyncPreLoginEvent event = new AuthMeAsyncPreLoginEvent(player);
         bukkitService.callEvent(event);
         if (!event.canLogin()) {
