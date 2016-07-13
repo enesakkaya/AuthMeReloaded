@@ -5,7 +5,7 @@ import fr.xephi.authme.process.logout.ProcessSynchronousPlayerLogout;
 import fr.xephi.authme.process.quit.ProcessSyncronousPlayerQuit;
 import fr.xephi.authme.process.register.ProcessSyncEmailRegister;
 import fr.xephi.authme.process.register.ProcessSyncPasswordRegister;
-import fr.xephi.authme.util.BukkitService;
+//import fr.xephi.authme.util.BukkitService;
 import org.bukkit.entity.Player;
 
 import javax.inject.Inject;
@@ -20,8 +20,10 @@ import javax.inject.Inject;
  */
 public class SyncProcessManager {
 
+    /*
     @Inject
     private BukkitService bukkitService;
+    */
 
     @Inject
     private ProcessSyncEmailRegister processSyncEmailRegister;
@@ -36,51 +38,68 @@ public class SyncProcessManager {
 
 
     public void processSyncEmailRegister(final Player player) {
+        processSyncEmailRegister.processEmailRegister(player);
+        /*
         runTask(new Runnable() {
             @Override
             public void run() {
                 processSyncEmailRegister.processEmailRegister(player);
             }
         });
+        */
     }
 
     public void processSyncPasswordRegister(final Player player) {
+        processSyncPasswordRegister.processPasswordRegister(player);
+        /*
         runTask(new Runnable() {
             @Override
             public void run() {
                 processSyncPasswordRegister.processPasswordRegister(player);
             }
         });
+        */
     }
 
     public void processSyncPlayerLogout(final Player player) {
+        processSynchronousPlayerLogout.processSyncLogout(player);
+        /*
         runTask(new Runnable() {
             @Override
             public void run() {
                 processSynchronousPlayerLogout.processSyncLogout(player);
             }
         });
+        */
     }
 
     public void processSyncPlayerLogin(final Player player) {
+        processSyncPlayerLogin.processPlayerLogin(player);
+        /*
         runTask(new Runnable() {
             @Override
             public void run() {
                 processSyncPlayerLogin.processPlayerLogin(player);
             }
         });
+        */
     }
 
     public void processSyncPlayerQuit(final Player player) {
+        processSyncronousPlayerQuit.processSyncQuit(player);
+        /*
         runTask(new Runnable() {
             @Override
             public void run() {
                 processSyncronousPlayerQuit.processSyncQuit(player);
             }
         });
+        */
     }
 
+    /*
     private void runTask(Runnable runnable) {
         bukkitService.scheduleSyncDelayedTask(runnable);
     }
+    */
 }
